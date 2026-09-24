@@ -1,0 +1,16 @@
+# iWildCam low-light subset (8 classes). See the paper, Section IV-A1.
+path: /absolute/path/to/iwildcam_lowlight
+train: images/train
+val: images/val
+test: images/test
+
+nc: 8
+names:
+  0: bobcat
+  1: opossum
+  2: coyote
+  3: raccoon
+  4: dog
+  5: squirrel
+  6: rabbit
+  7: skunk

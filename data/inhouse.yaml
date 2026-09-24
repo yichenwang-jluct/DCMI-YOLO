@@ -1,0 +1,35 @@
+# In-house nighttime camera-trap dataset (17 classes).
+#
+# The dataset itself is NOT distributed: it contains imagery of endangered
+# species together with capture timestamps, and releasing the raw images or
+# location metadata could facilitate poaching. Point `path` at your own data in
+# the standard Ultralytics layout and the configs in models/ will train on it.
+#
+#   dataset/
+#   ├── images/{train,val,test}/
+#   └── labels/{train,val,test}/
+
+path: /absolute/path/to/dataset
+train: images/train
+val: images/val
+test: images/test
+
+nc: 17
+names:
+  0: Amur tiger
+  1: Badger
+  2: Asian black bear
+  3: Cow
+  4: Dog
+  5: Hare
+  6: Amur leopard
+  7: Leopard cat
+  8: Musk deer
+  9: Raccoon dog
+  10: Red fox
+  11: Roe deer
+  12: Sable
+  13: Sika deer
+  14: Weasel
+  15: Wild boar
+  16: Yellow-throated marten
