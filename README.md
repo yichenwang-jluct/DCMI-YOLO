@@ -1,120 +1,202 @@
-DCMI-YOLO: Nighttime Camera-Trap Wildlife Detection
-A lightweight YOLOv8-based detector for nighttime / low-light camera-trap wildlife images, designed for endangered-species monitoring (e.g. Amur tiger and Amur leopard). The model integrates four targeted components on top of the Ultralytics YOLOv8 framework:
-SCI-Gamma — low-light image enhancement at the input stage
-Star-ADown — lightweight downsampling module
-MultiSEAM — attention module for occluded / small targets
-DF-CIoU — improved bounding-box regression loss
-The model detects 17 wildlife categories and is optimized for accuracy–efficiency trade-off (≈2.7 M parameters, ≈7.1 GFLOPs).
-> ⚠️ **Data availability**: Due to the conservation sensitivity of the species involved (endangered Amur tiger/leopard), **the dataset is NOT publicly released**. Raw images and location/timestamp information are withheld to avoid any risk of misuse (e.g. poaching). Researchers seeking access for legitimate academic purposes may contact the corresponding author; access may require a data-use / confidentiality agreement.
+# DCMI-YOLO
+
+**Detection-Coordinated Multi-scale Illumination-aware YOLO** — a lightweight end-to-end detector for nighttime and low-light camera-trap imagery, built for unattended monitoring of endangered wildlife (Amur tiger, Amur leopard and 15 other species of northeast China).
+
+Illumination enhancement, downsampling, occlusion handling and bounding-box regression are optimised **jointly under the detection objective**, instead of enhancing first and detecting afterwards. On a 17-class nighttime camera-trap dataset it reaches **0.801 mAP@0.5:0.95 with 2.85 M parameters and 8.1 GFLOPs**, and sustains 26 FPS at 5.8 W on a Jetson Orin Nano.
+
 ---
-Classes (17)
-```
-AmurTiger, Badger, BlackBear, Cow, Dog, Hare, Leopard, LeopardCat,
-MuskDeer, RaccoonDog, RedFox, RoeDeer, Sable, SikaDeer, Weasel,
-WildBoar, Y.T.Marten
-```
+
+## What is in the model
+
+Four modules on top of Ultralytics YOLOv8n:
+
+| Module | Replaces | What it does |
+|---|---|---|
+| **SCI-Gamma** | — (new frontend) | Closed-form, parameter-free adaptive gamma mapping. Brightens dark regions with a bounded response instead of a learned enhancement network, so it adds no trainable parameters. |
+| **Star-ADown** | the stride-2 downsampling convolutions | Dual-path downsampling whose two branches are fused by a ReLU6-guided element-wise product and a 1×1 projection, rather than concatenated. A weak response in either branch suppresses the output there, which filters single-branch noise responses under low light. |
+| **MultiSEAM** | — (before each detection head) | Three parallel channel-space multi-scale modules at patch sizes {6, 7, 8}, applied at all three detection scales (P3/P4/P5) to recover features lost to occlusion. |
+| **DF-CIoU** | CIoU | Regression loss whose difficulty-mapping interval narrows as training proceeds, removing the IoU gradient of ambiguous low-IoU positives late in training. **Training-only — it does not change the inference graph.** |
+
 ---
-Repository structure
-```
-DCMI-YOLO/
-├── README.md
-├── LICENSE                         # AGPL-3.0 (inherited from Ultralytics)
-├── requirements.txt
-├── .gitignore
-├── models/
-│   └── StarADown_MUITISEAM_SCIGamma.yaml   # model architecture (nc=17)
-├── train.py                        # training entry
-├── val.py                          # validation entry
-├── eval_metrics.py                 # per-class metrics + params + GFLOPs (CSV export)
-├── FPS.py                          # latency / FPS benchmark
-├── data/
-│   └── A_my_data.yaml.template     # dataset config TEMPLATE (no real paths/data)
-└── results/                        # training curves & metrics (NO raw imagery)
-    ├── results.csv
-    ├── results.png
-    ├── confusion_matrix.png
-    ├── confusion_matrix_normalized.png
-    ├── P_curve.png
-    ├── R_curve.png
-    ├── F1_curve.png
-    └── PR_curve.png
-```
-> Note: `train_batch*.jpg`, `val_batch*.jpg`, `labels*.jpg`, and TensorBoard event files are intentionally **excluded** because they contain raw camera-trap imagery / dataset statistics.
+
+## Results
+
+All figures are means over three seeds (0 / 42 / 2024), measured on a site-disjoint test split under one protocol.
+
+### In-house 17-class nighttime camera-trap dataset
+
+| Model | Precision | Recall | mAP@0.5 | mAP@0.5:0.95 | Params (M) | FLOPs (G) | FPS |
+|---|---|---|---|---|---|---|---|
+| YOLOv8n (baseline) | 0.915 | 0.921 | 0.903 | 0.770 | 3.01 | 8.2 | 81 |
+| **DCMI-YOLO** | **0.943** | 0.925 | **0.948** | **0.801** | **2.85** | **8.1** | 69 |
+
+### iWildCam low-light subset (8 classes)
+
+| Model | Precision | Recall | mAP@0.5 | mAP@0.5:0.95 |
+|---|---|---|---|---|
+| YOLOv8n (baseline) | 0.880 | 0.861 | 0.825 | 0.733 |
+| **DCMI-YOLO** | **0.919** | **0.880** | **0.865** | **0.764** |
+
+### ENA-24 (independent third dataset, retrained on its own training split)
+
+| Model | mAP@0.5 | mAP@0.5:0.95 | Recall |
+|---|---|---|---|
+| YOLOv8n (baseline) | 0.793 | 0.591 | 0.683 |
+| **DCMI-YOLO** | **0.827** | **0.622** | **0.726** |
+
++3.1 pp mAP@0.5:0.95 over the baseline on both the in-house dataset and iWildCam, and the gain holds in all five folds of camera-site-level cross-validation (+4.1 to +4.6 pp).
+
+### Ablation (in-house dataset)
+
+| SCI-Gamma | Star-ADown | MultiSEAM | DF-CIoU | mAP@0.5 | mAP@0.5:0.95 | Params (M) | FLOPs (G) | FPS |
+|:-:|:-:|:-:|:-:|---|---|---|---|---|
+| ✗ | ✗ | ✗ | ✗ | 0.903 | 0.770 | 3.01 | 8.2 | 81 |
+| ✓ | ✗ | ✗ | ✗ | 0.914 | 0.779 | 3.03 | 8.4 | 75 |
+| ✗ | ✓ | ✗ | ✗ | 0.929 | 0.790 | 2.67 | 7.6 | 81 |
+| ✗ | ✗ | ✓ | ✗ | 0.917 | 0.781 | 3.21 | 8.7 | 70 |
+| ✗ | ✗ | ✗ | ✓ | 0.912 | 0.776 | 3.01 | 8.2 | 81 |
+| ✓ | ✓ | ✗ | ✗ | 0.939 | 0.795 | 2.71 | 7.8 | 75 |
+| ✓ | ✓ | ✓ | ✗ | 0.943 | 0.798 | 2.85 | 8.1 | 69 |
+| ✓ | ✓ | ✓ | ✓ | **0.948** | **0.801** | 2.85 | 8.1 | 69 |
+
+DF-CIoU is a training-only loss, so the last two rows share an inference graph and therefore identical parameters, FLOPs and FPS.
+
 ---
-Installation
+
+## Efficiency
+
+FPS is measured at 640×640, batch 1, FP32, forward pass + NMS (conf 0.001, IoU 0.7, max_det 300), as the median over 300 timed iterations after 50 warm-up iterations, with `torch.cuda.synchronize()` around the timed region. Desktop figures are on an RTX 4060 (8 GB).
+
+| Device | FPS | Avg power (W) | Energy / image (J) |
+|---|---|---|---|
+| NVIDIA RTX 4060 (8 GB) | 69 | — | — |
+| NVIDIA Jetson Orin Nano (7 W mode) | 26 | 5.8 | 0.22 |
+| NVIDIA Jetson Xavier NX (15 W mode) | 22 | 10.5 | 0.48 |
+| Raspberry Pi 4 + Coral Edge TPU (INT8) | 10 | 3.2 | 0.32 |
+
+The Orin Nano gives the best energy efficiency of the three, which is what matters for solar-powered field deployment.
+
+---
+
+## Install
+
 ```bash
-# Python 3.8+ recommended
+git clone https://github.com/yichenwang-jluct/DCMI-YOLO.git
+cd DCMI-YOLO
 pip install -r requirements.txt
 ```
-`requirements.txt` (minimum):
-```
-ultralytics>=8.2.0
-torch>=2.0.0
-numpy
-tqdm
-```
-> The exact `ultralytics` / `torch` versions used in the paper are pinned in `requirements.txt`. If you build on a different YOLO version, results may differ slightly.
----
-Dataset format
-This project expects the standard Ultralytics detection layout. Prepare your own dataset and a `data.yaml` like:
-```yaml
-# A_my_data.yaml  (template — fill in YOUR OWN paths)
-path: ./datasets/your_dataset      # dataset root (use a neutral path)
-train: images/train
-val: images/val
-test: images/test                  # optional
 
+Reference environment (what the paper's numbers were produced on): Windows 11, Intel Core i7-13650HX, NVIDIA RTX 4060 8 GB, Python 3.8, PyTorch 2.0.1, CUDA 11.7.
+
+---
+
+## Data
+
+Point a dataset YAML at your own images in standard Ultralytics layout:
+
+```
+dataset/
+├── images/{train,val,test}/
+└── labels/{train,val,test}/
+```
+
+```yaml
+# data/inhouse.yaml
+path: /abs/path/to/dataset
+train: images/train
+val:   images/val
+test:  images/test
 nc: 17
-names: [AmurTiger, Badger, BlackBear, Cow, Dog, Hare, Leopard, LeopardCat,
-        MuskDeer, RaccoonDog, RedFox, RoeDeer, Sable, SikaDeer, Weasel,
-        WildBoar, Y.T.Marten]
+names: [Amur tiger, Badger, Asian black bear, Cow, Dog, Hare, Amur leopard,
+        Leopard cat, Musk deer, Raccoon dog, Red fox, Roe deer, Sable,
+        Sika deer, Weasel, Wild boar, Yellow-throated marten]
 ```
+
+> **The camera-trap dataset itself is not public.** It contains images of endangered species together with capture timestamps, and releasing the raw imagery or location metadata could aid poaching. Researchers with a legitimate need can request access from the corresponding author; a confidentiality agreement is required.
+
 ---
-Usage
-1. Train
+
+## Train
+
 ```bash
-python train.py
+python train.py --cfg models/dcmi-yolo.yaml --data data/inhouse.yaml \
+                --epochs 200 --imgsz 640 --batch 8 --seed 0
 ```
-Key settings used in the paper: `imgsz=640`, `epochs=200`, `batch=8`, `optimizer=SGD`, `close_mosaic=0`. Edit the model/data paths inside `train.py` before running.
-2. Validate (per-class metrics + Params + GFLOPs)
+
+The protocol used for every model in the paper, baselines included:
+
+- initialised from COCO-pretrained YOLOv8n weights; 200 epochs at 640×640
+- mini-batch 8 accumulated to a nominal batch of 64
+- SGD, initial LR 0.01, momentum 0.937, weight decay 5e-4, 3-epoch linear warm-up, linear decay to a final LR of 1e-4
+- FP16, deterministic kernels, early stopping with patience 100
+- augmentation: Mosaic throughout, HSV (h 0.015, s 0.7, v 0.4), horizontal flip p=0.5, translate 0.1, scale 0.5, random erasing 0.4; rotation, shear, perspective, MixUp and Copy-Paste disabled
+
+Every comparison model was reproduced under exactly this schedule. Change any of it and the numbers stop being comparable.
+
+---
+
+## Evaluate
+
 ```bash
-python eval_metrics.py
+python val.py --weights runs/train/exp/weights/best.pt --data data/inhouse.yaml \
+              --imgsz 640 --batch 1 --conf 0.001 --iou 0.7 --max-det 300
 ```
-Outputs per-class Precision / Recall / mAP@0.5 / mAP@0.5:0.95, overall metrics, model parameters and GFLOPs, and saves a `per_class_metrics.csv`.
-> For **reproducing the end-of-training val numbers**, use `rect=True`.
-> For **paper-reportable, comparable metrics**, use `rect=False` (square evaluation).
-3. Benchmark speed (FPS / latency)
-```bash
-python FPS.py --weights path/to/best.pt --batch 1 --imgs 640 640 --device 0
+
+**Read P, R, mAP@0.5 and mAP@0.5:0.95 from one `val()` call.** They are not independent: for any point (R, P) on a precision–recall curve the interpolated average precision satisfies
+
 ```
+AP@0.5  >=  P * R
+```
+
+since every recall below R carries interpolated precision of at least P, so the area under the curve is at least the P×R rectangle. Averaged over classes this becomes `mAP@0.5 >= P̄·R̄ + Cov(P, R)`, and the covariance term is worth only a few thousandths in practice. A quick check on any row you report:
+
+```python
+r = (P * R) / mAP50
+# r <= 1.00 always; a real detector lands around 0.85-0.96.
+# r > 1.00 means P, R and mAP came from different runs, not that the model is unusual.
+```
+
+Every row in the paper satisfies this, with r between 0.834 and 0.943.
+
+Results are reported as the mean over seeds 0 / 42 / 2024. Average the four metrics across seeds together — never one column from one seed and another column from another.
+
 ---
-Pretrained weights
-The trained weights (`best.pt`, ≈5.6 MB) are provided via the Releases page.
-> ⚠️ Note: weights were trained on sensitive endangered-species data. They are released for **research reproducibility** only. Please use responsibly and do not deploy in ways that could facilitate locating or harming wildlife.
+
+## Repository layout
+
+```
+models/       network configuration for DCMI-YOLO and the ablation variants
+train.py      training entry point
+val.py        evaluation entry point
+scripts/      complexity (params/FLOPs), FPS benchmarking, metric export
+results/      per-run metrics and plots
+data/         dataset YAML templates
+requirements.txt
+```
+
 ---
-Results
-Final validation performance (see `results/results.csv` and `results/confusion_matrix.png`):
-Metric	Value
-mAP@0.5	~0.948
-mAP@0.5:0.95	~0.801
-Parameters	~2.7 M
-GFLOPs	~7.1
-(Per-class numbers: run `eval_metrics.py`.)
----
-License
-This project is released under the GNU AGPL-3.0 license, inherited from Ultralytics YOLO, on which it is built. See `LICENSE` for the full text. If you use this code, you must comply with AGPL-3.0 terms (including making source available for networked use).
----
-Acknowledgements & Citation
-This work is built upon Ultralytics YOLOv8:
-> Jocher, G., Chaurasia, A., & Qiu, J. (2023). *Ultralytics YOLO* (Version 8.0.0) [Computer software]. https://github.com/ultralytics/ultralytics
-If you use this repository in your research, please also cite our paper:
+
+## Citation
+
+The paper is under review. A full citation will be added once it is published; until then, please cite the repository and the preprint if you use this work.
+
 ```bibtex
-@article{your_dcmiyolo_2026,
-  title   = {DCMI-YOLO: <full paper title>},
-  author  = {<authors>},
-  journal = {<journal>},
-  year    = {2026},
-  note    = {Code: https://github.com/<your-username>/DCMI-YOLO}
+@misc{dcmiyolo2026,
+  title  = {Edge-Deployable Low-Light Object Detection for Automated Nighttime
+            Wildlife Monitoring: From Detection Accuracy to Ecological Indicators},
+  author = {Wang, Yichen and Qi, Shenao and He, Yuli and So, Chi Chiu},
+  year   = {2026},
+  note   = {Manuscript under review},
+  url    = {https://github.com/yichenwang-jluct/DCMI-YOLO}
 }
 ```
-> (Fill in the citation block once the paper is accepted.)
+
+---
+
+## License
+
+AGPL-3.0, inherited from [Ultralytics YOLOv8](https://github.com/ultralytics/ultralytics), on which this work is built.
+
+## Acknowledgment
+
+We thank the management authorities of the Changbai Mountain and Hunchun National Nature Reserves for permission to deploy camera traps and for logistical support during fieldwork, and the wildlife specialists who supervised species identification during annotation.
