@@ -1,7 +1,7 @@
 """
 Measure parameters and FLOPs consistently for every configuration in the paper.
 
-Run once per dataset, then paste the CSV into Tables 5-8, 11, 12, 16, 17 and 19:
+Run once per dataset (Params / FLOPs columns of Tables 3, 4, 6, 7, 11 and 12):
 
     python measure_complexity.py --nc 17 --out complexity_inhouse.csv
     python measure_complexity.py --nc 8  --out complexity_iwildcam.csv
@@ -14,10 +14,10 @@ Three independent counters are reported per model:
   thop_gflops    the same counter run directly at the real 640x640 input.
   fvcore_gflops  an independent library, if installed.
 
-If ultra_gflops and thop_gflops disagree, the scaling assumption is broken by one
-of your modules (MultiSEAM's fixed patch sizes are the likely candidate) and the
-number to report is thop_gflops. If thop and fvcore disagree by more than ~10 %,
-a custom op is not being counted at all - check the "unsupported" column.
+The paper reports the Ultralytics number. If a module cannot run on the 32x32
+probe (e.g. a 7x7 patch on the 1x1 P5 map), Ultralytics falls back to profiling at
+the real 640x640 input, and ultra_gflops then equals thop_gflops. If thop and fvcore
+disagree by more than ~10 %, an op is not being counted - check "unsupported".
 """
 
 from __future__ import annotations
@@ -29,9 +29,7 @@ import sys
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# EDIT THIS: paper row label -> trained checkpoint (preferred) or model .yaml.
-# Checkpoints are safer than .yaml: they are the exact models you evaluated, so
-# the complexity numbers cannot drift away from the reported accuracy.
+# Table 3 row label -> trained checkpoint (preferred) or model .yaml. Edit the paths.
 # ---------------------------------------------------------------------------
 CONFIGS = [
     ("YOLOv8n (baseline)",        "runs/ablation/base/weights/best.pt"),
@@ -177,7 +175,7 @@ def main() -> int:
     print(f"\nWritten to {args.out}")
 
     base = rows[0]
-    print(f"\nDeltas against '{base['config']}' (paste these into Table 8):")
+    print(f"\nDeltas against '{base['config']}' (cf. Table 3):")
     for r in rows[1:]:
         print(f"  {r['config']:<28} dParams {r['params_M']-base['params_M']:+.3f} M   "
               f"dFLOPs {r['thop_gflops']-base['thop_gflops']:+.2f} G")

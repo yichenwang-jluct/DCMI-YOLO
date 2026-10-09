@@ -7,13 +7,11 @@ Measure the FPS of ONE model.
 Prints three numbers, because "FPS" in a paper is ambiguous:
 
   model   pure forward pass                     (no letterbox, no NMS)
-  +NMS    forward pass + non-maximum suppression   <- report this one
+  +NMS    forward pass + non-maximum suppression
   e2e     the full predict pipeline             (needs --image)
 
-Whatever you report, use the SAME setting for every row of the table and state
-it in Section 4.1.2. Warm-up, CUDA synchronisation and a median over many
-repeats are handled here; getting any of those wrong moves the answer by tens
-of percent.
+Use the same setting (batch, precision, timing mode) for every model you compare.
+Warm-up, CUDA synchronisation and a median over many repeats are handled here.
 """
 
 from __future__ import annotations
@@ -82,7 +80,7 @@ def main() -> None:
         ms_nms = timed(fwd_nms, args.warmup, args.repeat, sync) / args.batch
 
     print(f"  model        {ms_model:7.3f} ms   {1000 / ms_model:7.1f} FPS")
-    print(f"  model + NMS  {ms_nms:7.3f} ms   {1000 / ms_nms:7.1f} FPS   <- report this")
+    print(f"  model + NMS  {ms_nms:7.3f} ms   {1000 / ms_nms:7.1f} FPS")
 
     if args.image and Path(args.image).exists():
         import cv2

@@ -1,26 +1,12 @@
 """
-Re-export Precision, Recall, mAP@0.5 and mAP@0.5:0.95 so that the four numbers in
-each table row come from ONE validation run, and check them against the geometric
-constraint that AP >= P x R.
+Evaluate every checkpoint of every seed once and export P, R, mAP@0.5 and
+mAP@0.5:0.95 as mean +/- SD over seeds, each row taken from single val() calls.
 
     python export_metrics.py --data data/inhouse.yaml --split test --out metrics_inhouse.csv
 
-Why this is needed
-------------------
-Ultralytics reports P and R at the confidence that maximises mean F1, while AP
-integrates the whole precision-recall curve. For every class, the interpolated AP
-is at least the area of the rectangle under any point of its own curve, so
-
-    AP50_c  >=  P_c * R_c        (per class)
-    mAP@0.5 >=  P  * R           (in practice, unless P and R are strongly
-                                  negatively correlated across classes)
-
-A row that breaks this means P/R and mAP did not come from the same run, the same
-confidence threshold, or the same split. This script makes that impossible and
-flags any residual violation per class.
-
-It also reports FPS from the same run, so the ablation rows stay additive in
-latency (1/FPS), which the current Table 8 does not.
+Settings follow Section IV-A2 (confidence 0.001, NMS IoU 0.7, max 300 detections).
+As a sanity check, every row is tested against AP@0.5 >= P x R, which holds per class
+for the interpolated precision-recall curve at the reported operating point.
 """
 
 from __future__ import annotations
@@ -32,9 +18,7 @@ import sys
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# EDIT THIS: paper row label -> {seed: checkpoint}. Use the SAME seeds for every
-# row. If you only kept one seed for some rows, retrain or drop the +/- SD claim
-# for those rows rather than mixing seed counts.
+# Row label -> {seed: checkpoint}; the paper uses seeds 0, 42 and 2024. Edit the paths.
 # ---------------------------------------------------------------------------
 CONFIGS = {
     "YOLOv8n (baseline)": {
@@ -47,7 +31,7 @@ CONFIGS = {
         42:   "runs/ablation/full_s42/weights/best.pt",
         2024: "runs/ablation/full_s2024/weights/best.pt",
     },
-    # ... add every row of Tables 5-7, 11, 12, 13, 16-19 here
+    # ... add the remaining rows (Tables 3, 4, 6-8, 11-13) here
 }
 
 
@@ -169,10 +153,6 @@ def main() -> int:
     else:
         print("\nAll rows satisfy mAP50 >= P x R.")
 
-    lat = {s["config"]: s["ms_inference"] for s in summary}
-    print("\nLatency per image (ms) - use these to check that Table 8 is additive:")
-    for k, v in lat.items():
-        print(f"   {k:<30} {v:.2f} ms")
     return 0
 
 

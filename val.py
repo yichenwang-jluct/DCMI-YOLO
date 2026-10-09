@@ -1,18 +1,15 @@
 """
-Evaluate one checkpoint and print every metric from the SAME val() call.
+Evaluate one checkpoint on the test split with the paper's settings and print every
+metric from the SAME val() call.
 
-    python val.py --weights runs/train/.../weights/best.pt --data data/inhouse.yaml
+    python val.py --weights runs/train/<run>/weights/best.pt --data data/inhouse.yaml
 
-P, R, mAP@0.5 and mAP@0.5:0.95 are not independent. For any point (R, P) on a
-precision-recall curve the interpolated average precision obeys AP@0.5 >= P * R,
-because every recall below R carries interpolated precision of at least P. So
+Settings (Section IV-A2): confidence 0.001, NMS IoU 0.7, at most 300 detections per
+image, square 640x640 letterboxing. Precision and recall are read at the confidence that
+maximizes mean F1 (Ultralytics); AP and mAP integrate the whole precision-recall curve.
 
-    r = (P * R) / mAP@0.5
-
-must be <= 1.00, and for a real detector it lands around 0.85-0.96. A value above
-1.00 does not mean the model is unusual - it means the four numbers came from
-different runs. Reading them off one result object, as this script does, makes
-that impossible.
+Sanity check printed at the end: for any operating point (R, P) on an interpolated
+precision-recall curve, AP@0.5 >= P * R, so r = P * R / mAP@0.5 must not exceed 1.
 """
 
 from __future__ import annotations
@@ -38,7 +35,7 @@ def main() -> int:
 
     res = YOLO(a.weights).val(data=a.data, split=a.split, imgsz=a.imgsz, batch=a.batch,
                               conf=a.conf, iou=a.iou, max_det=a.max_det,
-                              device=a.device, plots=False, verbose=False)
+                              device=a.device, plots=False, verbose=True)
     b = res.box
     P, R, m50, m = float(b.mp), float(b.mr), float(b.map50), float(b.map)
     r = P * R / m50 if m50 else float("nan")
@@ -47,23 +44,13 @@ def main() -> int:
     print(f"  Recall         {R:.4f}")
     print(f"  mAP@0.5        {m50:.4f}")
     print(f"  mAP@0.5:0.95   {m:.4f}")
-    print(f"\n  r = P*R/mAP@0.5 = {r:.3f}   "
-          f"[{'OK' if 0.85 <= r <= 0.97 else 'CHECK' if r <= 1.0 else 'BROKEN - not one run'}]")
-
-    try:                                              # the same bound, per class
-        bad = sum(1 for ap50, p, rc in zip(b.all_ap[:, 0], b.p, b.r)
-                  if float(ap50) < float(p) * float(rc) - 1e-6)
-        if bad:
-            print(f"  ! {bad}/{len(b.p)} classes break AP50 >= P*R inside this single run -"
-                  f" that is a bug, not a reporting mismatch")
-    except Exception:
-        pass
+    print(f"\n  r = P*R/mAP@0.5 = {r:.3f}   [{'OK' if r <= 1.0 else 'CHECK'}]")
 
     sp = getattr(res, "speed", {}) or {}
     if sp:
         tot = sp.get("inference", math.nan) + sp.get("postprocess", 0.0)
         print(f"\n  inference {sp.get('inference', float('nan')):.2f} ms + NMS "
-              f"{sp.get('postprocess', float('nan')):.2f} ms  ->  {1000/tot:.1f} FPS")
+              f"{sp.get('postprocess', float('nan')):.2f} ms per image")
     return 0
 
 

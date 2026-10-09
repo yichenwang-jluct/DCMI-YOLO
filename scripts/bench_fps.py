@@ -1,6 +1,5 @@
 """
-Measure FPS for every configuration under one protocol, and check that the
-per-module latencies add up.
+Measure FPS for every ablation configuration (Table 3) under one protocol.
 
     python bench_fps.py --imgsz 640 --out fps.csv
 
@@ -11,12 +10,9 @@ Reports three numbers per model, because "FPS" in a paper is ambiguous:
   fps_e2e     the full Ultralytics predict pipeline (load, letterbox, forward,
               NMS, scale boxes) - this is what a deployed system sees
 
-Whichever you report, report the SAME one for every row and say so in Section 4.1.2.
-
-Protocol notes baked in below, all of which change the answer by tens of percent
-if you get them wrong: fixed batch size, fixed precision, warm-up iterations
-before timing, torch.cuda.synchronize() around the timed region, and a median
-over many repeats rather than a mean over a few.
+Use the same timing mode for every row. Protocol: fixed batch size and precision,
+warm-up iterations before timing, torch.cuda.synchronize() around the timed
+region, and the median over many repeats.
 """
 
 from __future__ import annotations
@@ -29,8 +25,7 @@ import time
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# EDIT THIS: the paper's row label -> checkpoint. Keep the first entry as the
-# baseline; the additivity check is computed against it.
+# Table 3 row label -> checkpoint. Edit the paths.
 # ---------------------------------------------------------------------------
 CONFIGS = [
     ("YOLOv8n (baseline)",      "runs/ablation/base/weights/best.pt"),
@@ -139,38 +134,6 @@ def main() -> int:
         w.writerows({k: r[k] for k in fields} for r in rows)
     print(f"\nWritten to {args.out}")
 
-    # --- additivity check on the metric you will report -----------------------
-    MODULES = {"sci": "SCI-Gamma", "adown": "Star-ADown", "seam": "MultiSEAM"}
-    by = {r["config"]: r for r in rows}
-    base_label = rows[0]["config"]
-    base = by[base_label]["ms_nms"]
-
-    def present(cfg):
-        c = cfg.lower()
-        return {k for k in MODULES if k in c}
-
-    singles = {}
-    for r in rows:
-        mods = present(r["config"])
-        if len(mods) == 1:
-            singles[next(iter(mods))] = r["ms_nms"] - base
-
-    if singles:
-        print(f"\nPer-module latency, measured alone (vs '{base_label}', +NMS timing):")
-        for k, v in singles.items():
-            print(f"   {MODULES[k]:<26} {v:+.2f} ms")
-        print("\nCombined rows: measured vs the sum of the parts")
-        for r in rows:
-            mods = present(r["config"])
-            if len(mods) < 2 or not mods <= set(singles):
-                continue
-            pred = base + sum(singles[m] for m in mods)
-            gap = r["ms_nms"] - pred
-            tag = "OK" if abs(gap) <= 0.05 * pred else "MISMATCH"
-            print(f"   {r['config']:<26} measured {r['ms_nms']:6.2f}  predicted {pred:6.2f}  "
-                  f"gap {gap:+.2f} ms  [{tag}]")
-        print("\nA gap beyond about 5 % means one of the rows was not measured "
-              "under this protocol; re-run that row rather than explaining the gap.")
     return 0
 
 

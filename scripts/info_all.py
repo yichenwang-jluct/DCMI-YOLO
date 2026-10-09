@@ -1,11 +1,12 @@
 """
-Print params / GFLOPs for every trained checkpoint under runs\\train\\*.
+Print parameters and GFLOPs (Ultralytics model.info()) for every trained checkpoint.
 
     python info_all.py
     python info_all.py --glob "runs/train/*/weights/best.pt" --out complexity.csv
 
-Sorted by folder name. Copy the two columns straight into Tables 6-8, 11, 12,
-16, 17 and 19, and take the deltas against whichever row is your baseline.
+Sorted by folder name; deltas are printed against the first checkpoint, so name the
+baseline run so that it sorts first. These are the Params / FLOPs columns of
+Tables 3, 4, 6, 7, 11 and 12 of the paper (nc = 17 in-house, nc = 8 iWildCam).
 """
 
 from __future__ import annotations
